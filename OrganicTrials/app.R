@@ -1,6 +1,6 @@
 # Required libraries
 library(googlesheets)
-library(lmerTest)
+library(lsmeans)
 library(gridExtra)
 library(reshape)
 library(lattice)
@@ -8,20 +8,35 @@ library(grid)
 library(gplots)
 library(Hmisc)
 library(DT)
+library(lme4)
+
+# Google sheet authenication needs to be refreshed if not used for six months
+
+#token <- gs_auth()
+#saveRDS(token, file = "googlesheets_token.rds")
+
+# Set sheet list
+googlesheets::gs_auth(token = "googlesheets_token.rds")
+sheet_df <<- as.data.frame(gs_ls("-ds"))[,c("sheet_title","sheet_key")]
+sheet_list <<- setNames(as.list(sheet_df$sheet_key), sheet_df$sheet_title)
 
 # Get data from Google sheets and set as global dataframe
-
-update_gs <- function (url) {
+update_gs <- function (key) {
   
-  TOMI_gs <<- gs_key(extract_key_from_url(url))
-  DATA <<- gs_read(TOMI_gs)
+  DATA_gs <<- gs_key(key)
+  DATA <<- gs_read(DATA_gs,ws="Data")
   DATA$Block <<- factor(DATA$Block)
+  DATA$Location <<- factor(DATA$Location)
   DATA$LocBlock <<- factor(paste0(DATA$Location,DATA$Block))
-  traits <<- colnames(DATA[,7:length(colnames(DATA))])
+
+  
+  META <<- gs_read(DATA_gs,ws="Metadata")
+  trait_df <<- subset(META,Visable=="Yes")
+  traits <<- trait_df$TraitID
   
 }
 
-update_gs("https://docs.google.com/spreadsheets/d/1MzHAMhjHnF0h_-l0t-b107gmMA_1X7j79qYYnVP0Awc/pub?gid=1645815788&single=true&output=csv")
+update_gs("1je8VIIr7bf0ny_tTvZ8Rm5edkWIWXX85Zq-mbco7WA0")
 
 # Define UI for application 
 ui <- shinyUI(fluidPage(
@@ -32,8 +47,7 @@ ui <- shinyUI(fluidPage(
   # Sidebar 
   sidebarLayout(
     sidebarPanel(
-      textInput("sheet", "Google Sheet Public URL", placeholder = "https://docs.google.com/spreadsheets/d/1MzHAMhjHnF0h_-l0t-b107gmMA_1X7j79qYYnVP0Awc/pub?gid=1645815788&single=true&output=csv"),
-      actionButton("submit", "Load New Sheet"),
+      selectInput("sheet", "Data Sheet", sheet_list),
       selectInput("analysis", "Analysis Type", 
                   list(
                     "XY Plot" = "xyplot",
@@ -55,7 +69,7 @@ ui <- shinyUI(fluidPage(
 ))
 
 # Define server logic
-server <- shinyServer(function(input, output) {
+server <- shinyServer(function(input, output, session) {
   
   output$results <- renderUI({
     
@@ -74,8 +88,10 @@ server <- shinyServer(function(input, output) {
   output$anova <- renderPrint({anova_func(input, DATA)})
   output$spearman <- renderPrint({spearman_func(input, DATA)})
   
-  observeEvent(input$submit, {
+  observeEvent(input$sheet, {
     update_gs(input$sheet)
+    updateSelectInput(session, "trait",
+                      choices = traits)
   })
   
 })
@@ -99,9 +115,46 @@ normal_func <- function(input, DATA) {
   
 }
 
+GetRegionalMeanCI <- function (trait_name, trait_env) {
+  
+  regional_data <- DATA[DATA$Location == trait_env, ]
+  regional_data <- droplevels(regional_data)
+
+  formula_name <- as.formula(paste0(trait_name,"~ EntryName + (1|Block)"))
+    
+  trait.lm <- lmer (formula_name, data=regional_data)
+  trait.lsm <- lsmeans(trait.lm, ~ EntryName, data=regional_data) ### REQUIRES lsmeans
+  trait.cld<-cld(trait.lsm)
+  
+  trait.cld$CI <- (trait.cld$upper.CL - trait.cld$lower.CL)/2
+  trait.cld[,trait_name] <- paste0(format(round(trait.cld$lsmean, 2), nsmall = 2),
+                                   " ± ", format(round(trait.cld$CI,1), nsmall=1))
+  trait.cld <- trait.cld[,c("EntryName",trait_name)]
+  colnames(trait.cld) <- c("EntryName", trait_env)
+  return(trait.cld)
+  
+}
+
+
 table_func <- function (input, DATA) {
   
-  return (DATA)
+  env_list <- list()
+  
+  eval(parse(text = paste0("env_subset <- levels(droplevels(subset(DATA, !is.na(",input$trait,"), select = Location))$Location)")))
+  
+  for (env_num in 1:length(env_subset)) {
+    
+    env_name <- env_subset[env_num]
+    
+    env_list[[env_name]] <- GetRegionalMeanCI(input$trait, env_name)
+    
+  }
+  
+  trait_table<-Reduce(function(x, y) merge(x, y, all=T),env_list, accumulate=F)
+  rownames(trait_table) <- trait_table$EntryName
+  trait_table <- trait_table[,-which(names(trait_table)=="EntryName")]
+  
+  return (trait_table)
   
 }
 
