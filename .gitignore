@@ -4,3 +4,4 @@
 .Ruserdata
 .DS_Store
 googlesheets_token.rds
+.httr-oauth
