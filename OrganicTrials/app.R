@@ -1,5 +1,12 @@
+# Style guide -----
+# ALLCAPS - global constants
+# UpperCamel - functions
+# snake_case - variables
+# Space between operators
+# No space after function call
+
 # Required libraries
-library(googlesheets)
+library(rdrop2)
 library(lsmeans)
 library(gridExtra)
 library(reshape)
@@ -9,34 +16,52 @@ library(gplots)
 library(Hmisc)
 library(DT)
 library(lme4)
+library(stringr)
 
-# Google sheet authenication needs to be refreshed if not used for six months
+# Dropbox authenication done only once. May need to be refreshed...
+# TOKEN<-drop_auth()
+# saveRDS(TOKEN, "droptoken.rds")
 
-#token <- gs_auth()
-#saveRDS(token, file = "googlesheets_token.rds")
+# Set TOKEN from token file
+TOKEN <- readRDS("droptoken.rds")
 
-# Set sheet list
-googlesheets::gs_auth(token = "googlesheets_token.rds")
-sheet_df <<- as.data.frame(gs_ls("-ds"))[,c("sheet_title","sheet_key")]
-sheet_list <<- setNames(as.list(sheet_df$sheet_key), sheet_df$sheet_title)
+# Path to trial data
+PATH <- "/CompiledData"
 
-# Get data from Google sheets and set as global dataframe
-update_gs <- function (key) {
+# Get file list
+CreateFileList <- function (path) {
+  file_list <<- as.data.frame(drop_dir(path = path, dtoken = TOKEN))[ ,c("path")]
+  file_list <<- str_match(file_list, ".*/(.*)")
+  return (file_list)
+}
+FILELIST <- CreateFileList(PATH)
+
+# Get data from selected file and set as global dataframe
+UpdateFile <- function (file_name) {
   
-  DATA_gs <<- gs_key(key)
-  DATA <<- gs_read(DATA_gs,ws="Data")
-  DATA$Block <<- factor(DATA$Block)
-  DATA$Location <<- factor(DATA$Location)
-  DATA$LocBlock <<- factor(paste0(DATA$Location,DATA$Block))
-
+  #First seven lines are metadata
+  meta_data <- drop_read_csv(file_name, dtoken = TOKEN, nrow=6)
+  data <- drop_read_csv(file_name, dtoken = TOKEN, skip=7)
   
-  META <<- gs_read(DATA_gs,ws="Metadata")
-  trait_df <<- subset(META,Visable=="Yes")
-  traits <<- trait_df$TraitID
+  data$Block <- factor(data$Block)
+  data$Location <- factor(data$Location)
+  data$LocBlock <- factor(paste0(data$Location,data$Block))
+  
+  meta_data <-t(meta_data)
+  colnames(meta_data) <- c("Name","Units","Description","Notes","Notes2","Visable")
+
+  return(list(data = data, meta_data = meta_data))  
   
 }
+DATA <- UpdateFile(FILELIST[1,1])
 
-update_gs("1je8VIIr7bf0ny_tTvZ8Rm5edkWIWXX85Zq-mbco7WA0")
+UpdateTraits <- function(data) {
+  
+  meta_data <- as.data.frame(data$meta_data)
+  traits <- rownames(subset(meta_data,Visable == "Visable"))
+  return(traits)
+}
+TRAITS <- UpdateTraits(DATA)
 
 # Define UI for application 
 ui <- shinyUI(fluidPage(
@@ -47,17 +72,17 @@ ui <- shinyUI(fluidPage(
   # Sidebar 
   sidebarLayout(
     sidebarPanel(
-      selectInput("sheet", "Data Sheet", sheet_list),
+      selectInput("file", "Data File", as.list(c(FILELIST[,2],FILELIST[,1]))),
       selectInput("analysis", "Analysis Type", 
                   list(
                     "XY Plot" = "xyplot",
-                    "Normal XY plot" = "normal", 
-                    "Data Table" = "table",
+                    "Standized XY plot" = "normal", 
+                    "Means Table" = "table",
                     "ANOVA" = "anova",
                     "Spearman" = "spearman")
       ),
       selectInput("trait", "Trait:",
-                  traits)
+                  TRAITS)
       
     ),
     
@@ -82,92 +107,92 @@ server <- shinyServer(function(input, output, session) {
     
   })
   
-  output$xyplot <- renderPlot({xyplot_func(input, DATA)})   
-  output$normal <- renderPlot({normal_func(input, DATA)})
-  output$table <- DT::renderDataTable({table_func(input,DATA)})
-  output$anova <- renderPrint({anova_func(input, DATA)})
-  output$spearman <- renderPrint({spearman_func(input, DATA)})
+  output$xyplot <- renderPlot({XyplotFunc(input, DATA$data)})   
+  output$normal <- renderPlot({NormalFunc(input, DATA$data)})
+  output$table <- DT::renderDataTable({TableFunc(input,DATA$data)})
+  output$anova <- renderPrint({AnovaFunc(input, DATA$data)})
+  output$spearman <- renderPrint({SpearmanFunc(input, DATA$data)})
   
-  observeEvent(input$sheet, {
-    update_gs(input$sheet)
+  observeEvent(input$file, {
+    DATA <<- UpdateFile(input$file)
+    TRAITS <<- UpdateTraits(DATA)
     updateSelectInput(session, "trait",
-                      choices = traits)
+                      choices = TRAITS)
   })
   
 })
 
 # Analysis functions
 
-xyplot_func <- function(input, DATA) {
+XyplotFunc <- function(input, data) {
   
-  eval(parse(text = paste0("byaverage <-with(DATA, reorder(EntryName, -",input$trait,", na.rm=TRUE))")))
+  eval(parse(text = paste0("byaverage <-with(data, reorder(EntryName, -",input$trait,", na.rm=TRUE))")))
   formula_name <- as.formula(paste0(input$trait, " ~ byaverage"))
-  print(xyplot(formula_name, group=Location, data=DATA, auto.key=list(space='right'), jitter.x=TRUE, scales=list(x=list(rot=55)))) 
+  print(xyplot(formula_name, group=Location, data=data, auto.key=list(space='right'), jitter.x=TRUE, scales=list(x=list(rot=55)))) 
   
 }
 
-normal_func <- function(input, DATA) {
+NormalFunc <- function(input, data) {
   
-  eval(parse(text = paste0("DATA <- transform(DATA, ",input$trait," =ave(",input$trait,", Location, FUN = scale))")))
-  eval(parse(text = paste0("byaverage <-with(DATA, reorder(EntryName, -",input$trait,", na.rm=TRUE))")))
+  eval(parse(text = paste0("data <- transform(data, ",input$trait," =ave(",input$trait,", Location, FUN = scale))")))
+  eval(parse(text = paste0("byaverage <-with(data, reorder(EntryName, -",input$trait,", na.rm=TRUE))")))
   formula_name <- as.formula(paste0(input$trait, " ~ byaverage"))
-  print(xyplot(formula_name, group=Location, data=DATA, auto.key=list(space='right'), jitter.x=TRUE, scales=list(x=list(rot=55)))) 
+  print(xyplot(formula_name, group=Location, data=data, auto.key=list(space='right'), jitter.x=TRUE, scales=list(x=list(rot=55)))) 
   
 }
 
-GetRegionalMeanCI <- function (trait_name, trait_env) {
+GetRegionalMeanCI <- function (trait_name, trait_env, data) {
   
-  regional_data <- DATA[DATA$Location == trait_env, ]
+  regional_data <- data[data$Location == trait_env, ]
   regional_data <- droplevels(regional_data)
-
+  
   formula_name <- as.formula(paste0(trait_name,"~ EntryName + (1|Block)"))
-    
   trait.lm <- lmer (formula_name, data=regional_data)
   trait.lsm <- lsmeans(trait.lm, ~ EntryName, data=regional_data) ### REQUIRES lsmeans
-  trait.cld<-cld(trait.lsm)
+  trait.cld<-cld(trait.lsm, Letters=letters)
   
-  trait.cld$CI <- (trait.cld$upper.CL - trait.cld$lower.CL)/2
-  trait.cld[,trait_name] <- paste0(format(round(trait.cld$lsmean, 2), nsmall = 2),
-                                   " ± ", format(round(trait.cld$CI,1), nsmall=1))
+  trait.cld[,trait_name] <- paste0(format(round(trait.cld$lsmean, 2), nsmall = 2),"  ", as.character(trait.cld$.group))
+  
   trait.cld <- trait.cld[,c("EntryName",trait_name)]
-  colnames(trait.cld) <- c("EntryName", trait_env)
+  colnames(trait.cld) <- c("EntryName",trait_env)
+                           
   return(trait.cld)
   
 }
 
 
-table_func <- function (input, DATA) {
+TableFunc <- function (input, data) {
   
   env_list <- list()
   
-  eval(parse(text = paste0("env_subset <- levels(droplevels(subset(DATA, !is.na(",input$trait,"), select = Location))$Location)")))
+  eval(parse(text = paste0("env_subset <- levels(droplevels(subset(data, !is.na(",input$trait,"), select = Location))$Location)")))
   
   for (env_num in 1:length(env_subset)) {
     
     env_name <- env_subset[env_num]
     
-    env_list[[env_name]] <- GetRegionalMeanCI(input$trait, env_name)
+    env_list[[env_name]] <- GetRegionalMeanCI(input$trait, env_name, data)
     
   }
   
-  trait_table<-Reduce(function(x, y) merge(x, y, all=T),env_list, accumulate=F)
+  trait_table<-Reduce(function(x, y) merge(x, y, by="EntryName", all=T),env_list, accumulate=F)
   rownames(trait_table) <- trait_table$EntryName
-  trait_table <- trait_table[,-which(names(trait_table)=="EntryName")]
+  #trait_table <- trait_table[,-which(names(trait_table)=="EntryName")]
   
   return (trait_table)
   
 }
 
-anova_func <- function(input, DATA) {
+AnovaFunc <- function(input, data) {
   
   formula_name <- as.formula(paste0(input$trait, " ~ EntryName * Location + (1|LocBlock)"))
-  return(anova((lmer(formula_name, data = DATA))))  ### REQUIRES lme4
+  return(anova((lmer(formula_name, data = data))))  ### REQUIRES lme4
   
 }
 
-spearman_func <- function(input, DATA) {
+SpearmanFunc <- function(input, data) {
   
-  trait_loc <- aggregate(as.formula(paste0(input$trait," ~ EntryName:Location")), data = DATA, mean, na.rm = TRUE)
+  trait_loc <- aggregate(as.formula(paste0(input$trait," ~ EntryName:Location")), data = data, mean, na.rm = TRUE)
   trait_loc <- cast(trait_loc, EntryName ~ Location, value = c(as.character(input$trait))) ### REQUIRES reshape
   
   return(rcorr(as.matrix(trait_loc), type = "spearman"))
