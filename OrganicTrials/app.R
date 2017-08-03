@@ -34,6 +34,7 @@ CreateFileList <- function (path) {
   files <- str_match(files, ".*/(.*)")
   file_list <- as.list(files[,1])
   names(file_list) <- files[,2]
+  
   return (file_list)
 }
 FILELIST <- CreateFileList(PATH)
@@ -61,6 +62,7 @@ UpdateTraits <- function(data) {
   
   meta_data <- as.data.frame(data$meta_data)
   traits <- rownames(subset(meta_data,Visable == "Visable"))
+  
   return(traits)
 }
 TRAITS <- UpdateTraits(DATA)
@@ -166,13 +168,11 @@ GetRegionalMeanCI <- function (trait_name, trait_env, data) {
 TableFunc <- function (input, data) {
   
   env_list <- list()
-  
   eval(parse(text = paste0("env_subset <- levels(droplevels(subset(data, !is.na(",input$trait,"), select = Location))$Location)")))
   
   for (env_num in 1:length(env_subset)) {
     
     env_name <- env_subset[env_num]
-    
     env_list[[env_name]] <- GetRegionalMeanCI(input$trait, env_name, data)
     
   }
@@ -188,6 +188,7 @@ TableFunc <- function (input, data) {
 AnovaFunc <- function(input, data) {
   
   formula_name <- as.formula(paste0(input$trait, " ~ EntryName * Location + (1|LocBlock)"))
+  
   return(anova((lmer(formula_name, data = data))))  ### REQUIRES lme4
   
 }
