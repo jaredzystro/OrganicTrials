@@ -30,8 +30,10 @@ PATH <- "/CompiledData"
 
 # Get file list
 CreateFileList <- function (path) {
-  file_list <<- as.data.frame(drop_dir(path = path, dtoken = TOKEN))[ ,c("path")]
-  file_list <<- str_match(file_list, ".*/(.*)")
+  files <- as.data.frame(drop_dir(path = path, dtoken = TOKEN))[ ,c("path")]
+  files <- str_match(files, ".*/(.*)")
+  file_list <- as.list(files[,1])
+  names(file_list) <- files[,2]
   return (file_list)
 }
 FILELIST <- CreateFileList(PATH)
@@ -49,11 +51,11 @@ UpdateFile <- function (file_name) {
   
   meta_data <-t(meta_data)
   colnames(meta_data) <- c("Name","Units","Description","Notes","Notes2","Visable")
-
+  
   return(list(data = data, meta_data = meta_data))  
   
 }
-DATA <- UpdateFile(FILELIST[1,1])
+DATA <- UpdateFile(as.character(FILELIST[1]))
 
 UpdateTraits <- function(data) {
   
@@ -72,7 +74,7 @@ ui <- shinyUI(fluidPage(
   # Sidebar 
   sidebarLayout(
     sidebarPanel(
-      selectInput("file", "Data File", as.list(c(FILELIST[,2],FILELIST[,1]))),
+      selectInput("file", "Data File", FILELIST),
       selectInput("analysis", "Analysis Type", 
                   list(
                     "XY Plot" = "xyplot",
@@ -155,7 +157,7 @@ GetRegionalMeanCI <- function (trait_name, trait_env, data) {
   
   trait.cld <- trait.cld[,c("EntryName",trait_name)]
   colnames(trait.cld) <- c("EntryName",trait_env)
-                           
+  
   return(trait.cld)
   
 }
