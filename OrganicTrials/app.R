@@ -30,7 +30,7 @@ PATH <- "/CompiledData"
 
 # Get file list
 CreateFileList <- function (path) {
-  files <- as.data.frame(drop_dir(path = path, dtoken = TOKEN))[ ,c("path")]
+  files <- as.data.frame(drop_dir(path = path, dtoken = TOKEN))[ ,c("path_display")]
   files <- str_match(files, ".*/(.*)")
   file_list <- as.list(files[,1])
   names(file_list) <- files[,2]
