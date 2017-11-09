@@ -6,7 +6,7 @@
 # No space after function call
 
 # Required libraries
-library(rdrop2)
+
 library(lsmeans)
 library(gridExtra)
 library(reshape)
@@ -17,34 +17,20 @@ library(Hmisc)
 library(DT)
 library(lme4)
 library(stringr)
+library(shinythemes)
+library(rhandsontable)
+library(shinyBS)
 
-# Dropbox authenication done only once. May need to be refreshed...
-# TOKEN<-drop_auth()
-# saveRDS(TOKEN, "droptoken.rds")
-
-# Set TOKEN from token file
-TOKEN <- readRDS("droptoken.rds")
-
-# Path to trial data
-PATH <- "/CompiledData"
-
-# Get file list
-CreateFileList <- function (path) {
-  files <- as.data.frame(drop_dir(path = path, dtoken = TOKEN))[ ,c("path_display")]
-  files <- str_match(files, ".*/(.*)")
-  file_list <- as.list(files[,1])
-  names(file_list) <- files[,2]
-  
-  return (file_list)
-}
-FILELIST <- CreateFileList(PATH)
+DATA <- reactiveValues()
+TRAITS <- NULL
 
 # Get data from selected file and set as global dataframe
+
 UpdateFile <- function (file_name) {
   
   #First seven lines are metadata
-  meta_data <- drop_read_csv(file_name, dtoken = TOKEN, nrow=6)
-  data <- drop_read_csv(file_name, dtoken = TOKEN, skip=7)
+  meta_data <- read.csv(file_name$datapath, nrow=6)
+  data <- read.csv(file_name$datapath, skip=7)
   
   data$Block <- factor(data$Block)
   data$Location <- factor(data$Location)
@@ -53,10 +39,10 @@ UpdateFile <- function (file_name) {
   meta_data <-t(meta_data)
   colnames(meta_data) <- c("Name","Units","Description","Notes","Notes2","Visable")
   
-  return(list(data = data, meta_data = meta_data))  
+  DATA$data <- data
+  DATA$meta_data <- meta_data
   
 }
-DATA <- UpdateFile(as.character(FILELIST[1]))
 
 UpdateTraits <- function(data) {
   
@@ -65,64 +51,164 @@ UpdateTraits <- function(data) {
   
   return(traits)
 }
-TRAITS <- UpdateTraits(DATA)
 
 # Define UI for application 
 ui <- shinyUI(fluidPage(
   
-  # Application title
-  #   titlePanel(TOMI_gs$sheet_title),
-  
-  # Sidebar 
-  sidebarLayout(
-    sidebarPanel(
-      selectInput("file", "Data File", FILELIST),
-      selectInput("analysis", "Analysis Type", 
-                  list(
-                    "XY Plot" = "xyplot",
-                    "Standized XY plot" = "normal", 
-                    "Means Table" = "table",
-                    "ANOVA" = "anova",
-                    "Spearman" = "spearman")
-      ),
-      selectInput("trait", "Trait:",
-                  TRAITS)
-      
+  navbarPage(theme = shinytheme("united"), "Variety Trial Tool",
+             
+    tabPanel("Get Started",
+                      
+    # Code for getting started
+    
+    h1("Getting started with the Variety Trial Tool"),
+    h4("Welcome to the online Variety Trial Tool. This tool can help you plan 
+      simple variety trials and view the results. Below are some instructions."),
+    HTML("<br><br>"),
+    h2("Table of Contents"),
+    h3("1. Planning your trial"),
+    h3("2. Getting the data cleaned up and ready to analyze"),
+    h3("3. Analyzing your data online"),
+    h3("4. Creating a downloadable report"),
+    h3("5. Sharing your data")
+    
+                      
+    ),
+             
+    tabPanel("Plan Your Trial"
+                      
+    # Code for trial planning
+              
+    ),
+             
+    tabPanel("Get Your Data Ready",
+             
+      # Code for quality control
+      # 1. File upload
+      # 2. Editable data
+      # 3. Select entry columns, rep columns, row and col column, numeric columns, text columns
+      # 4. Ways to show out of range values
+      # 5. Ways to show inconsistant entry names
+      # 6. Ways to show text in numberic entries
+             
+      sidebarLayout(
+        sidebarPanel(
+          fileInput("file", "Choose a .csv File",
+                    multiple = FALSE,
+                    accept = c("text/csv",
+                               "text/comma-separated-values,text/plain",
+                               ".csv")
+          ), 
+          bsTooltip(id = "file", title = "To create .csv file from Excel select Save As and choose comma deliminated (.csv)", 
+                    placement = "left", trigger = "hover"),
+          selectInput("qc_analyis", "Quality Control Tools", 
+                      list(
+                        "Editable table" = "editable",
+                        "Ranges" = "ranges",
+                        "Factor names" = "factor_names")
+          )
+        ),
+        mainPanel(
+          rHandsontableOutput("uploaded_data")
+          
+        )
+      )
+              
+    ),
+             
+    tabPanel("Analyze Online", 
+      sidebarLayout(
+        sidebarPanel(
+          
+          # Moved file input to quality control
+          
+          # Things needed:
+          # 1. color coded summaries
+          # 2. Text summaries
+          
+          
+          selectInput("analysis", "Analysis Type", 
+                      list(
+                        "XY Plot" = "xyplot",
+                        "Standized XY plot" = "normal", 
+                        "Means Table" = "table",
+                        "ANOVA" = "anova",
+                        "Spearman" = "spearman")
+          ),
+          
+          selectInput("trait", "Trait:",
+                      TRAITS)
+          
+          ),
+        
+        # Show results
+        mainPanel(
+          uiOutput("results")
+        )
+      )
     ),
     
-    # Show results
-    mainPanel(
-      uiOutput("results")
-    )
+    tabPanel("Download Results"
+             
+    # Code for report downloading here
+             
+             ),
+    
+    tabPanel("Save And Share"
+             
+    # Code for data saving here
+    
+             )
+    
   )
 ))
 
 # Define server logic
 server <- shinyServer(function(input, output, session) {
+
+  # Server code for 'Get Your Data Ready' page
+  output$uploaded_data <- renderRHandsontable({
+    req(input$file) # make sure file has been uploaded before displaying
+    if (!is.null(input$uploaded_data)) {
+       DATA$data <- hot_to_r(input$uploaded_data)
+    }
+    rhandsontable(DATA$data)
+  })
   
+  # Server code for 'Analyze Online' page
   output$results <- renderUI({
+    req(input$file, input$analysis)
     
     switch (input$analysis, 
             xyplot = plotOutput("xyplot"),
             normal = plotOutput("normal"),
-            table = DT::dataTableOutput("table"),
+            table = DT::dataTableOutput("table") ,
             anova =  verbatimTextOutput("anova"),
             spearman =  verbatimTextOutput("spearman"))
     
   })
   
-  output$xyplot <- renderPlot({XyplotFunc(input, DATA$data)})   
+  output$xyplot <- renderPlot({XyplotFunc(input, DATA$data)})
   output$normal <- renderPlot({NormalFunc(input, DATA$data)})
-  output$table <- DT::renderDataTable({TableFunc(input,DATA$data)})
+  output$table <- DT::renderDataTable({TableFunc(input,DATA$data)}, rownames=FALSE)
   output$anova <- renderPrint({AnovaFunc(input, DATA$data)})
   output$spearman <- renderPrint({SpearmanFunc(input, DATA$data)})
   
+  # Global observing
   observeEvent(input$file, {
-    DATA <<- UpdateFile(input$file)
+
+    UpdateFile(input$file)
     TRAITS <<- UpdateTraits(DATA)
     updateSelectInput(session, "trait",
-                      choices = TRAITS)
+                     choices = TRAITS)
   })
+  # 
+  # observeEvent(input$uploaded_data, {
+  #   
+  #   DATA$data <- as.data.frame(hot_to_r(input$uploaded_data))
+  #   
+  # })
+  
   
 })
 
