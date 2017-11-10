@@ -20,6 +20,7 @@ library(stringr)
 library(shinythemes)
 library(rhandsontable)
 library(shinyBS)
+library(agricolae)
 
 DATA <- reactiveValues()
 TRAITS <- NULL
@@ -55,125 +56,197 @@ UpdateTraits <- function(data) {
 # Define UI for application 
 ui <- shinyUI(fluidPage(
   
+  tags$head(tags$link(rel="shortcut icon", href="favicon.ico")),
+  
   navbarPage(theme = shinytheme("united"), "Variety Trial Tool",
              
-    tabPanel("Get Started",
+             tabPanel("Get Started",
                       
-    # Code for getting started
-    
-    h1("Getting started with the Variety Trial Tool"),
-    h4("Welcome to the online Variety Trial Tool. This tool can help you plan 
+                      # Code for getting started
+                      
+                      h1("Getting started with the Variety Trial Tool"),
+                      h4("Welcome to the online Variety Trial Tool. This tool can help you plan 
       simple variety trials and view the results. Below are some instructions."),
-    HTML("<br><br>"),
-    h2("Table of Contents"),
-    h3("1. Planning your trial"),
-    h3("2. Getting the data cleaned up and ready to analyze"),
-    h3("3. Analyzing your data online"),
-    h3("4. Creating a downloadable report"),
-    h3("5. Sharing your data")
-    
+                      HTML("<br><br>"),
+                      h2("Table of Contents"),
+                      h3("1. Planning your trial"),
+                      h3("2. Getting the data cleaned up and ready to analyze"),
+                      h3("3. Analyzing your data online"),
+                      h3("4. Creating a downloadable report"),
+                      h3("5. Sharing your data")
                       
-    ),
-             
-    tabPanel("Plan Your Trial"
                       
-    # Code for trial planning
-              
-    ),
-             
-    tabPanel("Get Your Data Ready",
-             
-      # Code for quality control
-      # 1. File upload
-      # 2. Editable data
-      # 3. Select entry columns, rep columns, row and col column, numeric columns, text columns
-      # 4. Ways to show out of range values
-      # 5. Ways to show inconsistant entry names
-      # 6. Ways to show text in numberic entries
-             
-      sidebarLayout(
-        sidebarPanel(
-          fileInput("file", "Choose a .csv File",
-                    multiple = FALSE,
-                    accept = c("text/csv",
-                               "text/comma-separated-values,text/plain",
-                               ".csv")
-          ), 
-          bsTooltip(id = "file", title = "To create .csv file from Excel select Save As and choose comma deliminated (.csv)", 
-                    placement = "left", trigger = "hover"),
-          selectInput("qc_analyis", "Quality Control Tools", 
-                      list(
-                        "Editable table" = "editable",
-                        "Ranges" = "ranges",
-                        "Factor names" = "factor_names")
-          )
-        ),
-        mainPanel(
-          rHandsontableOutput("uploaded_data")
-          
-        )
-      )
-              
-    ),
-             
-    tabPanel("Analyze Online", 
-      sidebarLayout(
-        sidebarPanel(
-          
-          # Moved file input to quality control
-          
-          # Things needed:
-          # 1. color coded summaries
-          # 2. Text summaries
-          
-          
-          selectInput("analysis", "Analysis Type", 
-                      list(
-                        "XY Plot" = "xyplot",
-                        "Standized XY plot" = "normal", 
-                        "Means Table" = "table",
-                        "ANOVA" = "anova",
-                        "Spearman" = "spearman")
-          ),
-          
-          selectInput("trait", "Trait:",
-                      TRAITS)
-          
-          ),
-        
-        # Show results
-        mainPanel(
-          uiOutput("results")
-        )
-      )
-    ),
-    
-    tabPanel("Download Results"
-             
-    # Code for report downloading here
-             
              ),
-    
-    tabPanel("Save And Share"
              
-    # Code for data saving here
-    
+             tabPanel("Plan Your Trial",
+                      
+                      sidebarLayout(
+                        sidebarPanel(
+                          
+                          selectInput("trial_type", "Trial Type", 
+                                      list(
+                                        "RCBD" = "rcbd")
+                          ),
+                          
+                          numericInput("reps", "Replications", 3, min = 1, max = 100),
+                          
+                          textAreaInput("entry_names", "Entry Names", rows = 8),
+                          
+                          actionButton("generate_trial", "Create Trial")
+                          
+                        ),
+                        
+                        # Show results
+                        mainPanel(
+                          rHandsontableOutput("planning_output"),
+                          
+                          uiOutput("hidden_download")
+                        )
+                      )
+             ),
+             
+             tabPanel("Get Your Data Ready",
+                      
+                      # Code for quality control
+                      # 1. File upload
+                      # 2. Editable data
+                      # 3. Select entry columns, rep columns, row and col column, numeric columns, text columns
+                      # 4. Ways to show out of range values
+                      # 5. Ways to show inconsistant entry names
+                      # 6. Ways to show text in numberic entries
+                      
+                      sidebarLayout(
+                        sidebarPanel(
+                          fileInput("file", "Choose a .csv File",
+                                    multiple = FALSE,
+                                    accept = c("text/csv",
+                                               "text/comma-separated-values,text/plain",
+                                               ".csv")
+                          ), 
+                          bsTooltip(id = "file", title = "To create .csv file from Excel select Save As and choose comma deliminated (.csv)", 
+                                    placement = "left", trigger = "hover"),
+                          selectInput("qc_analyis", "Quality Control Tools", 
+                                      list(
+                                        "Editable table" = "editable",
+                                        "Ranges" = "ranges",
+                                        "Factor names" = "factor_names")
+                          )
+                        ),
+                        mainPanel(
+                          rHandsontableOutput("uploaded_data")
+                          
+                        )
+                      )
+                      
+             ),
+             
+             tabPanel("Analyze Online", 
+                      sidebarLayout(
+                        sidebarPanel(
+                          
+                          # Moved file input to quality control
+                          
+                          # Things needed:
+                          # 1. color coded summaries
+                          # 2. Text summaries
+                          
+                          
+                          selectInput("analysis", "Analysis Type", 
+                                      list(
+                                        "XY Plot" = "xyplot",
+                                        "Standized XY plot" = "normal", 
+                                        "Means Table" = "table",
+                                        "ANOVA" = "anova",
+                                        "Spearman" = "spearman")
+                          ),
+                          
+                          selectInput("trait", "Trait:",
+                                      TRAITS)
+                          
+                        ),
+                        
+                        # Show results
+                        mainPanel(
+                          uiOutput("results")
+                        )
+                      )
+             ),
+             
+             tabPanel("Download Results"
+                      
+                      # Code for report downloading here
+                      
+             ),
+             
+             tabPanel("Save And Share"
+                      
+                      # Code for data saving here
+                      
              )
-    
+             
   )
 ))
 
 # Define server logic
 server <- shinyServer(function(input, output, session) {
+  
+  # Server code for 'Plan Your Trial' page
+  output$planning_output <- renderRHandsontable({
+    
+    # React to button
+    req(input$generate_trial)
+    input$generate_trial 
+    
+    # Don't react to changes in reps and names
+    reps <- isolate(input$reps)
+    trt <- isolate(unlist(strsplit(x = input$entry_names, split = '[\r\n]' )))
 
+    outdesign <-design.rcbd(trt = trt, r = reps, serie = 2) # seed = 986
+    book <- outdesign$book # field book
+    fieldbook <- zigzag(outdesign)
+    outdesign <- design.rcbd(trt, reps, serie = 2, continue = TRUE)
+
+#    print(outdesign$sketch)
+#    print(matrix(fieldbook[, 1], byrow = TRUE, ncol = 5))
+    
+    DATA$design <- outdesign$book # save for download
+    
+    rhandsontable(outdesign$book)
+
+  })
+  
+  # Hiding download button until trial is created
+  output$hidden_download <- renderUI({
+    req(input$generate_trial)
+    
+    return(
+      list(
+        HTML("<br><br>"),
+        downloadButton("download_trial", "Download Trial Design")
+        )
+      )
+  })
+  
+  
   # Server code for 'Get Your Data Ready' page
   output$uploaded_data <- renderRHandsontable({
     req(input$file) # make sure file has been uploaded before displaying
     if (!is.null(input$uploaded_data)) {
-       DATA$data <- hot_to_r(input$uploaded_data)
+      DATA$data <- hot_to_r(input$uploaded_data)
     }
     rhandsontable(DATA$data)
   })
+  
+  # Download .csv of trial design
+  output$download_trial <- downloadHandler(
+    filename = function() {
+      paste('design-', Sys.Date(), '.csv', sep='')
+    },
+    content = function(con) {
+      write.csv(DATA$design, con)
+    }
+  )
+
   
   # Server code for 'Analyze Online' page
   output$results <- renderUI({
@@ -196,19 +269,12 @@ server <- shinyServer(function(input, output, session) {
   
   # Global observing
   observeEvent(input$file, {
-
+    
     UpdateFile(input$file)
     TRAITS <<- UpdateTraits(DATA)
     updateSelectInput(session, "trait",
-                     choices = TRAITS)
+                      choices = TRAITS)
   })
-  # 
-  # observeEvent(input$uploaded_data, {
-  #   
-  #   DATA$data <- as.data.frame(hot_to_r(input$uploaded_data))
-  #   
-  # })
-  
   
 })
 
