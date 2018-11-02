@@ -24,7 +24,7 @@ library(shinyBS)
 library(agricolae)
 library(ggplot2)
 library(doBy)
-library(htmlwidgets)
+#library(htmlwidgets)
 library(manipulateWidget)
 library(webshot)
 library(plotly)
@@ -51,13 +51,21 @@ REPORT_TYPELIST <- list()
 CURRENT_OBJECT <- NULL
 CURRENT_TYPE <- NULL
 
+# Strip problematic characters from input
 
+CleanText <- function (text) { 
+  
+  return(gsub("[{}%&$#_^~\\]","", text))
+  
+}
 
 # Get data from selected file and save in reactive global object
 UpdateData <- function (data) {
   
 #  data$Plot <- factor(data$Plot)
+  data$Rep <- CleanText(data$Rep)
   data$Rep <- factor(data$Rep)
+  data$EntryName <- CleanText(data$EntryName)
   data$EntryName <- factor(data$EntryName)
   
   REACTIVES$data <- data
@@ -93,6 +101,7 @@ ui <- shinyUI(fluidPage(
                       h4("Most people will use this site by beginning at the 'Plan Your Trial' tab."),
                       h4("If you already have trial data collected, skip to the 'Upload Your Data' tab."),
                       h4("If you want to see other people's trial data, go to the 'See Other Trials' tab."),
+                      HTML("<h4><a href=https://www.youtube.com/watch?v=ItiHAN8O1fU&feature=youtu.be&t=3023>Go here for a video walkthrough of the trial tool</a></h4><br><br>"),
                       HTML("<br>"),
                       HTML("<h4>For more information on how to conduct variety trials, go to <a href=http://www.seedalliance.org>http://www.seedalliance.org</a></h4><br><br>"),
                       div(img(src='2017Green-transparent-background-OSA-logo.png', height = '100'),img(src='RMA-highRez.jpg', height = '100'), style="text-align: center;"),
@@ -200,7 +209,7 @@ ui <- shinyUI(fluidPage(
                                                 Right now this tool can handle single location trials, so multi-location trials will 
                                                  need to be split up by location for analysis. <br><br>
                                                  Finally, there are a couple of data formatting requirements. Missing data should be 
-                                                 indicated by a blank cell and the tool cannot currently handle the # symbol in datasets (This should be fixed soon).")),
+                                                 indicated by a blank cell. Also, the tool removes the following symbols from data, as they cause problems rendering the PDF reports: {}%&$#_^~\\.")),
                           rHandsontableOutput("uploaded_data")
                           
                         )
@@ -248,7 +257,8 @@ ui <- shinyUI(fluidPage(
                           selectInput("analysis", "Analysis Type", 
                                       list(
                                         "Means Table" = "table",
-                                        "Data Plot" = "dataplot")
+                                        "Data Plot" = "dataplot",
+                                        "Notes" = "notes")
 
                           ),
                           
@@ -274,11 +284,17 @@ ui <- shinyUI(fluidPage(
                                                 a dataset of your own or loaded someone else's, you can select
                                                 an analysis from the menu on the left to begin creating figures.<br><br>
                                                 Currently there are two analyses: a table of means and groups for all traits, and plots
-                                                of means and confidence intervals for individual traits. Traits in the means table
-                                                are color-coded with the Viridis colorblind-friendly coloring system, with yellow being high,
-                                                and dark purple being low. Means are adjusted, based on replication effects.<br><br>
+                                                of means and confidence intervals for individual traits. <br><br>
                                                 As you create figures, a button will appear that will allow you to add them to a report
-                                                 <br><br>Once you've added figures, you can label your report and download a PDF.")),
+                                                <br><br>Once you've added figures, you can label your report and download a PDF.<br><br><small>
+                                                Details: Traits in the means table are color-coded with the Viridis colorblind-friendly coloring system, with yellow being high,
+                                                and dark purple being low. Means are modeled using the lme4 package in R, with the mixed model
+                                                of Trait ~ Trait ~ EntryName + (1|Rep) for RCBD and Trait ~ EntryName + (1|Rep) + (1|Block) for 
+                                                augmented designs. For the 95% confidence intervals in the plots, the intervals are calculated 
+                                                with the lsmeans function in the lsmeans package using the above models with the default alpha
+                                                of 0.05. Degrees of freedom for unbalanced trials are calculated by the Satterthwaite method.
+                                                For the means table, the means groupings are calculated by the cld function in the lsmeans package
+                                                with an alpha of 0.05. More details on it are here: https://cran.r-project.org/web/packages/lsmeans/lsmeans.pdf</small>")),
                           uiOutput("results")
                         )
                       )
@@ -369,9 +385,9 @@ server <- shinyServer(function(input, output, session) {
   RCBDOutput <- function () {
     
     # Don't react to changes in reps and names
-    reps <- input$plan_reps
-    trt <- trim(unlist(strsplit(x = input$plan_entry_names, split = '[\n,]+[:space:]*' )))
-    traits <- trim(unlist(strsplit(x = input$plan_traits, split = '[\n,]+[:space:]*' )))
+    reps <- as.numeric(CleanText(input$plan_reps))
+    trt <- trim(unlist(strsplit(x = CleanText(input$plan_entry_names), split = '[\n,]+[:space:]*' )))
+    traits <- trim(unlist(strsplit(x = CleanText(input$plan_traits), split = '[\n,]+[:space:]*' )))
     
     outdesign <- design.rcbd(trt, reps, serie = 2, continue = TRUE)
     
@@ -386,24 +402,24 @@ server <- shinyServer(function(input, output, session) {
     
     # Add trait columns
     plot_list[,traits] <- NA
+    plot_list["Notes"] <- NA
     return(plot_list)
   }
   
   AugmentedOutput <- function () {
     
-    reps <- input$plan_reps
-    blocks <- input$plan_blocks
+    reps <- as.numeric(CleanText(input$plan_reps))
+    blocks <- as.numeric(CleanText(input$plan_blocks))
     
     # RegExp allows newlines and commas as delimiters and strips white space around entries
-    trt <- trim(unlist(strsplit(x = input$plan_entry_names, split = '[\n,]+[:space:]*' )))
-    checks <- trim(unlist(strsplit(x = input$plan_check_names, split = '[\n,]+[:space:]*' )))
-    traits <- trim(unlist(strsplit(x = input$plan_traits, split = '[\n,]+[:space:]*' )))
+    trt <- trim(unlist(strsplit(x = CleanText(input$plan_entry_names), split = '[\n,]+[:space:]*' )))
+    checks <- trim(unlist(strsplit(x = CleanText(input$plan_check_names), split = '[\n,]+[:space:]*' )))
+    traits <- trim(unlist(strsplit(x = CleanText(input$plan_traits), split = '[\n,]+[:space:]*' )))
     
     
     all_plots <- setNames(data.frame(matrix(ncol = 5, nrow = 0)), c("Plot","Rep","Block","EntryName","Check"))
     
     for (i in 1:reps) {
-      
       outdesign <- design.dau(trt1 = checks, trt2 = trt, r=blocks, serie = 2)
       plot_list <- as.data.frame(outdesign$book)
       
@@ -426,6 +442,7 @@ server <- shinyServer(function(input, output, session) {
     
     # Add trait columns
     all_plots[,traits] <- NA
+    all_plots["Notes"] <- NA
     return(all_plots)
   }
   
@@ -455,7 +472,7 @@ server <- shinyServer(function(input, output, session) {
   output$plan_map <- renderRHandsontable({
     req(input$generate_map)
     req(input$plan_rows)
-    map_rows <- as.numeric(input$plan_rows)
+    map_rows <- as.numeric(CleanText(input$plan_rows))
     
     plots <- paste0(REACTIVES$design$Plot," - ",REACTIVES$design$EntryName)
     
@@ -504,7 +521,7 @@ server <- shinyServer(function(input, output, session) {
     req(REACTIVES$data) # make sure file has been uploaded before displaying
  #   shinyjs::hide("qc_text")
     if (!is.null(input$uploaded_data)) {
-      REACTIVES$data <- hot_to_r(input$uploaded_data)
+      REACTIVES$data <- hot_to_r(CleanText(input$uploaded_data))
     }
     rhandsontable(REACTIVES$data, readOnly = FALSE)
   })
@@ -539,7 +556,7 @@ server <- shinyServer(function(input, output, session) {
     if (input$analysis == "dataplot") {
       shinyjs::show("trait")
     }
-    else if (input$analysis == "table") {
+    else if (input$analysis == "table" || input$analysis == "notes") {
       shinyjs::hide("trait")
     }
   }) 
@@ -559,7 +576,8 @@ server <- shinyServer(function(input, output, session) {
     switch (input$analysis, 
                 
         table = tableOutput("table"),
-        dataplot = plotOutput("dataplot"))
+        dataplot = plotOutput("dataplot"),
+        notes = tableOutput("notes"))
       
     
   })
@@ -574,6 +592,11 @@ server <- shinyServer(function(input, output, session) {
       isolate(DataPlotFunc(input, REACTIVES$data))
   })
   
+  output$notes <- function() {
+    req(REACTIVES$data, input$analysis, REACTIVES$do_plot)
+    isolate(NotesFunc(input,REACTIVES$data))
+  }
+  
   output$download_chart <- downloadHandler(
     "TrialReport.pdf",
     content = 
@@ -582,19 +605,19 @@ server <- shinyServer(function(input, output, session) {
         withProgress(message = 'Creating report:', value = 0, {
           
           # Copy info to 'Save and Share' page
-          updateTextInput(session, "save_name", value = input$analyze_name)
-          updateTextInput(session, "save_location", value = input$analyze_save_location)
-          updateTextInput(session, "save_crop", value = input$analyze_save_crop)
-          updateTextInput(session, "save_description", value = input$analyze_save_description)
+          updateTextInput(session, "save_name", value = CleanText(input$analyze_name))
+          updateTextInput(session, "save_location", value = CleanText(input$analyze_save_location))
+          updateTextInput(session, "save_crop", value = CleanText(input$analyze_save_crop))
+          updateTextInput(session, "save_description", value = CleanText(input$analyze_save_description))
           incProgress(0.5, detail = "exporting data")
           rmarkdown::render(
             input = "report_file.Rmd",
             output_file = "built_report.pdf",
             params = list( 
-              name = input$analyze_name,
-              location = input$analyze_save_location,
-              crop = input$analyze_save_crop,
-              description = input$analyze_save_description,
+              name = CleanText(input$analyze_name),
+              location = CleanText(input$analyze_save_location),
+              crop = CleanText(input$analyze_save_crop),
+              description = CleanText(input$analyze_save_description),
               typelist = REPORT_TYPELIST, 
               objects = REPORT_OBJECTS)
           ) 
@@ -644,6 +667,12 @@ server <- shinyServer(function(input, output, session) {
   
   # Gets means and grouping for one data column
   GetMeanCLD <- function (trait_name, data) {
+    
+    if (levels(data$Rep)==1) { # Unreplicated
+      
+      
+      
+    }
     
    formula_name <- GetFormula(trait_name, data)
     
@@ -723,6 +752,31 @@ server <- shinyServer(function(input, output, session) {
     
   }
   
+  NotesFunc <- function (input, data) {
+    withProgress(message = paste0("Generating notes:"), value = 0, {
+      
+      incProgress(0.5, detail = "compiling notes")
+      data$RepNotes <- paste0("Rep ",data$Rep,": ",data$Notes)
+      notes_table <- aggregate(RepNotes ~ EntryName, data = data, FUN = paste, collapse = "; ")
+      data$RepNotes <- NA
+      
+      CURRENT_OBJECT <<- notes_table
+      CURRENT_TYPE <<- "notes"
+      
+      incProgress(0.5, detail = "rendering table")
+      
+      notes_table %<>% 
+        knitr::kable("html", escape = F, caption = "Notes") %>%
+        kable_styling("striped", full_width = F) %>%
+        footnote(general = "Commas seperate notes compiled across replications.")
+      
+      return (notes_table)
+      
+    })
+    
+    
+  }
+  
   ########## Server code for 'Save and Share' page ##########
   
   observeEvent(input$upload_to_dropbox, {
@@ -740,10 +794,10 @@ server <- shinyServer(function(input, output, session) {
       incProgress(0.5, detail = "updating file list")
       index <- drop_read_csv("ParticipantUploads/index.csv", dtoken = TOKEN)
       index <- rbind(index, data_frame(
-        Name = input$save_name, 
-        Location = input$save_location, 
-        Crop = input$save_crop, 
-        Description = input$save_description, 
+        Name = CleanText(input$save_name), 
+        Location = CleanText(input$save_location), 
+        Crop = CleanText(input$save_crop), 
+        Description = CleanText(input$save_description), 
         Email = input$save_email,
         Filename = fileName))
       
@@ -796,10 +850,10 @@ server <- shinyServer(function(input, output, session) {
       
       # Update names in Analyze Data tab
       
-      updateTextInput(session, "analyze_name", value = input$save_name)
-      updateTextInput(session, "analyze_save_location", value = input$save_location)
-      updateTextInput(session, "analyze_save_crop", value = input$save_crop)
-      updateTextInput(session, "analyze_save_description", value = input$save_description)
+      updateTextInput(session, "analyze_name", value = CleanText(input$save_name))
+      updateTextInput(session, "analyze_save_location", value = CleanText(input$save_location))
+      updateTextInput(session, "analyze_save_crop", value = CleanText(input$save_crop))
+      updateTextInput(session, "analyze_save_description", value = CleanText(input$save_description))
       
     })
   })
