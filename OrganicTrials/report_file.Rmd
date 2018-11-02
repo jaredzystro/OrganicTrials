@@ -1,0 +1,111 @@
+---
+output: 
+  pdf_document:
+    fig_caption: true
+
+params:
+  typelist : 'NULL'
+  objects: 'NULL'
+  name: 'NULL'
+  location: 'NULL'
+  crop: 'NULL'
+  description: 'NULL'
+  
+title: "Variety Trial Report"
+  
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{longtable}
+  - \usepackage{array}
+  - \usepackage{multirow}
+  - \usepackage[table]{xcolor}
+  - \usepackage{wrapfig}
+  - \usepackage{float}
+  - \usepackage{colortbl}
+  - \usepackage{pdflscape}
+  - \usepackage{tabu}
+  - \usepackage{threeparttable}
+  - \centering
+  - \usepackage{lscape}
+  - \usepackage{caption}
+
+---
+
+#  `r params$name`
+### Crop: `r params$crop`
+### Location: `r params$location`
+
+Trial description: `r params$description`
+\newpage
+
+\captionsetup[table]{labelformat=empty}
+
+```{r, message = FALSE, results = 'asis', tab.cap = NULL, tidy = TRUE, echo = FALSE, warning = FALSE}
+library(knitr)
+library(kableExtra)
+
+options(knitr.table.format = "latex")
+
+typelist <- params[["typelist"]]
+objects <- params[["objects"]]
+
+PrintTablePieces <- function (table, num_cols, title = TRUE)
+  
+{
+  
+  if (title == TRUE) { title_text <- "Table 1. Table of Means and Groups. Note:
+Letters indicate  entries which are not statistically different for that trait. For example, all entries with an 'a' are not statisically different for that trait" }
+  else { title_text <- "Table 1 (cont)." }
+  
+  if (ncol(table) < num_cols ) { num_cols <- ncol(table) }
+  piece_to_print <- table[,1:num_cols]
+  
+  new_col_names <- sub(".group.*", " ", colnames(piece_to_print))
+
+   print(piece_to_print %>% 
+      mutate_if(is.numeric, function(x) {
+        cell_spec(x, "latex", color = "white", bold = T, background = spec_color(x, end = 0.9))
+      }) %>% 
+      knitr::kable("latex", linesep = "", longtable = TRUE, escape = F, col.names = new_col_names, booktabs = T, caption = title_text) %>%
+#      landscape() %>%
+      kable_styling(latex_options = c("hold_position", "repeat_header","striped")))
+  
+  if (ncol(table) == num_cols) { return }
+  else { 
+    piece_left <- table[,c(1,(num_cols+1):ncol(table))]
+    PrintTablePieces(piece_left, num_cols, title = FALSE)
+  }
+  
+}
+
+PrintNotes <- function (notes) {
+  
+  print(notes %>% 
+        knitr::kable("latex", linesep = "", longtable = TRUE, escape = F, booktabs = T, caption = "Notes") %>%
+         kable_styling(latex_options = c("hold_position", "repeat_header","striped")))
+  
+}
+
+for (i in 1:length(typelist)) {
+  
+  if (typelist[[i]] == "plot") {
+    print(objects[[i]])
+  }
+  
+  if (typelist[[i]] == "table") {
+
+    PrintTablePieces(table = objects[[i]], num_cols = 11)
+    
+  }
+  
+  if (typelist[[i]] == "notes") {
+
+    PrintNotes(objects[[i]])
+    
+  }
+  
+ cat("\\newpage")
+}
+
+
+```
